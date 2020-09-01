@@ -1,6 +1,8 @@
 ﻿using System;
+using System.Data.Common;
 using System.IO;
 using Microsoft.Data.Sqlite;
+
 
 namespace AITool
 {
@@ -14,6 +16,7 @@ namespace AITool
         //      1x not in confidence range; 6x irrelevant : fire hydrant (47%); dog (42%); umbrella (77%); chair (98%); chair (86%); chair (60%); chair (59%); |
         //      1541,870,1690,1097;1316,1521,1583,1731;226,214,1231,637;451,1028,689,1321;989,769,1225,1145;882,616,1089,938;565,647,701,814;|
         //      false
+       
         public string Filename { get; set; } = "";
         public DateTime Date { get; set; } = DateTime.MinValue;
         public string Camera { get; set; } = "";
@@ -26,8 +29,9 @@ namespace AITool
     public class HistorySQLite
     {
         public string Filename { get; set; } = "";
-
-        public HistorySQLite(string Filename)
+        public SqliteConnection sqlite_conn { get; set; } = null;
+        public bool ReadOnly { get; } = false;
+        public HistorySQLite(string Filename, bool ReadOnly)
         {
             if (string.IsNullOrEmpty(Filename))
                 throw new System.ArgumentException("Parameter cannot be empty", "Filename");
@@ -44,22 +48,25 @@ namespace AITool
         private SqliteConnection CreateConnection()
         {
 
-            SqliteConnection sqlite_conn;
-
             try
             {
                 // Create a new database connection:
-                sqlite_conn = new SqliteConnection($"Data Source={this.Filename}; Version=3; New=True; Compress=True; ");
-
-                // Open the connection:
+                // Connection pooling:  Pooling=True;Max Pool Size=100;
+                // read-only Read Only=True;
+                sqlite_conn = new SqliteConnection($"Data Source={this.Filename}; Version=3; New=True; Compress=True; ");  
                 
+                // Open the connection:
+
                 sqlite_conn.Open();
 
                 // Enable write-ahead logging
                 //https://www.sqlite.org/wal.html
-                SqliteCommand walCommand = sqlite_conn.CreateCommand();
-                walCommand.CommandText = @"PRAGMA journal_mode = 'wal'";
-                walCommand.ExecuteNonQuery();
+                SqliteCommand cmd = sqlite_conn.CreateCommand();
+                cmd.CommandText = @"PRAGMA journal_mode = 'WAL'";
+                cmd.ExecuteNonQuery();
+                //https://www.sqlite.org/pragma.html#pragma_busy_timeout
+                cmd.CommandText = @"PRAGMA busy_timeout = 30000";   //set high to 30 seconds to be sure no failures when sharing database
+                cmd.ExecuteNonQuery();
 
             }
             catch (Exception ex)
